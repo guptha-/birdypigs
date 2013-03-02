@@ -1,5 +1,5 @@
-#ifndef inc_COORD_INC
-#define inc_COORD_INC
+#ifndef inc_COM_INC
+#define inc_COM_INC
 
 #include <fstream>
 #include <iostream>
@@ -10,6 +10,5 @@
 #include <unistd.h>
 #include <string>
 
-#include "coordconst.h"
-#include "coordprot.h"
+#include "../inc/comconst.h"
 #endif

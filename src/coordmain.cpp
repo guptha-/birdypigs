@@ -37,10 +37,19 @@ static void initRand ()
 
 
 /* ===  FUNCTION  ==============================================================
+ *         Name:  spawnPigs
+ * =============================================================================
+ */
+int spawnPigs (vector<int> pigPorts)
+{
+  // Fill this up once a skeleton of the pig's code is done
+  return EXIT_SUCCESS;
+}		/* -----  end of function spawnPigs  ----- */
+/* ===  FUNCTION  ==============================================================
  *         Name:  getWallPosns
  * =============================================================================
  */
-static void getWallPosns (int numberWalls, vector<int> *wallPosns)
+static void getWallPosns (int numberWalls, vector<int> &wallPosns)
 {
   // Storing wall positions
   while (numberWalls--)
@@ -50,7 +59,7 @@ static void getWallPosns (int numberWalls, vector<int> *wallPosns)
     {
       posn = (rand() % MAX_POSN) + 1;
       int duplicate = false;
-      for (auto &num : (*wallPosns))
+      for (auto &num : wallPosns)
       {
         // making sure there is no overlap
         if (num == posn)
@@ -64,7 +73,7 @@ static void getWallPosns (int numberWalls, vector<int> *wallPosns)
         break;
       }
     }
-    (*wallPosns).push_back(posn);
+    wallPosns.push_back(posn);
   }
 }		/* -----  end of function getWallPosns  ----- */
 
@@ -73,8 +82,8 @@ static void getWallPosns (int numberWalls, vector<int> *wallPosns)
  *         Name:  getPigPosns
  * =============================================================================
  */
-static void getPigPosns (int numberPigs, vector<int> wallPosns, 
-                         vector<int> *pigPosns)
+static void getPigPosns (int numberPigs, vector<int> &wallPosns, 
+                         vector<int> &pigPosns)
 {
   // Storing pig positions
   while (numberPigs--)
@@ -84,7 +93,7 @@ static void getPigPosns (int numberPigs, vector<int> wallPosns,
     {
       posn = (rand() % MAX_POSN) + 1;
       int duplicate = false;
-      for (auto &num : (*pigPosns))
+      for (auto &num : pigPosns)
       {
         // making sure there is no overlap with other pigs
         if (num == posn)
@@ -111,7 +120,7 @@ static void getPigPosns (int numberPigs, vector<int> wallPosns,
         break;
       }
     }
-    (*pigPosns).push_back(posn);
+    pigPosns.push_back(posn);
   }
 }		/* -----  end of function getPigPosns  ----- */
 
@@ -120,7 +129,7 @@ static void getPigPosns (int numberPigs, vector<int> wallPosns,
  *         Name:  getPigPorts
  * =============================================================================
  */
-static int getPigPorts (vector<int> *pigPorts)
+static int getPigPorts (vector<int> &pigPorts)
 {
   ifstream portFile;
   string str;
@@ -131,11 +140,15 @@ static int getPigPorts (vector<int> *pigPorts)
     return EXIT_FAILURE;
   }
   cout<<"The port numbers are:"<<endl;
-  while (!portFile.eof())
+  while (true)
   {
-    std::getline(portFile, str);
+    getline(portFile, str);
+    if (portFile.eof())
+    {
+      break;
+    }
     int portNum = atoi(str.c_str());
-    (*pigPorts).push_back(portNum);
+    pigPorts.push_back(portNum);
     cout<<portNum<<endl;
     fflush(stdout);
   }
@@ -148,13 +161,20 @@ static int getPigPorts (vector<int> *pigPorts)
  *  Description:  Control for each game flows from here.
  * =============================================================================
  */
-static void startGame (int numberPigs, vector<int> pigPorts)
+static void startGame (int numberPigs, vector<int> &pigPorts)
 {
   // Calculate number of walls
   int numberWalls = rand() % (MAX_WALLS + 1); // Limit number of walls
 
   vector<int> wallPosns;
-  getWallPosns (numberWalls, &wallPosns);
+  getWallPosns (numberWalls, wallPosns);
+
+  // TODO remove
+  cout<<"Pig ports:"<<endl;
+  for (auto &temp : pigPorts)
+  {
+    cout<<temp<<endl;
+  }
 
   cout<<"Wall positions:"<<endl;
   for (auto &temp : wallPosns)
@@ -163,7 +183,7 @@ static void startGame (int numberPigs, vector<int> pigPorts)
   }
 
   vector<int> pigPosns;
-  getPigPosns (numberPigs, wallPosns, &pigPosns);
+  getPigPosns (numberPigs, wallPosns, pigPosns);
 
   cout<<"Pig positions:"<<endl;
   for (auto &temp : pigPosns)
@@ -171,14 +191,12 @@ static void startGame (int numberPigs, vector<int> pigPorts)
     cout<<temp<<endl;
   }
 
-  int closestPig = min_element
-                       (pigPosns.begin(), pigPosns.end()) - pigPosns.begin();
-
-/* if (sendPosnMsg (closestPig, wallPosns, pigPosns) == EXIT_FAILURE)
+ if (coordSendPosnMsg (pigPorts, wallPosns, pigPosns) 
+     == EXIT_FAILURE)
   {
     cout<<"Could not send positions to closest pig."<<endl;
     cout<<"Next iteration of the game will proceed"<<endl;
-  }*/
+  }
   return;
 }		/* -----  end of function startGame  ----- */
 
@@ -204,7 +222,12 @@ int main(int argc, char **argv)
   }
 
   vector<int> pigPorts;
-  if (EXIT_FAILURE == getPigPorts (&pigPorts))
+  if (EXIT_FAILURE == getPigPorts (pigPorts))
+  {
+    return EXIT_FAILURE;
+  }
+
+  if (EXIT_FAILURE == spawnPigs (pigPorts))
   {
     return EXIT_FAILURE;
   }
