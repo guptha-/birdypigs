@@ -1,6 +1,7 @@
 DFLAG = -g
 WFLAG = -Wall
 C11FLAG = -std=c++11
+THREADFLAG = -pthread
 
 SRCC = coordmain.cpp\
 			 coordmsg.cpp\
@@ -40,7 +41,7 @@ all: coord pig
 
 coord: $(COBJ)
 	$(CREATEDIR)
-	g++ -o bin/coord $(WFLAG) $(COBJ) -lm
+	g++ -o bin/coord $(WFLAG) $(COBJ) -lm $(THREADFLAG)
 
 obj/PracticalSocket.o: src/PracticalSocket.cpp $(CINC)
 	$(CREATEDIR)
@@ -57,7 +58,7 @@ obj/coordmsg.o: src/coordmsg.cpp $(CINC)
 
 pig: $(POBJ)
 	$(CREATEDIR)
-	g++ -o bin/pig $(WFLAG) $(POBJ) -lm
+	g++ -o bin/pig $(WFLAG) $(POBJ) -lm $(THREADFLAG)
 
 obj/pigmain.o: src/pigmain.cpp $(PINC)
 	$(CREATEDIR)

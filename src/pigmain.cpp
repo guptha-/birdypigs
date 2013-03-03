@@ -25,22 +25,23 @@ mutex gPigWallMutex;
  *                response to some message.
  * =============================================================================
  */
-void listenerFlow (int listenerPort)
+static void listenerFlow (int listenerPort)
 {
+
   gPigOwnNode.portNumber = listenerPort;
-  UDPSocket listenSocket (listenerPort);
-  char inMsg[MAX_MSG_SIZE];
-  memset(inMsg, 0, MAX_MSG_SIZE);
+  UDPSocket listenSocket (COM_IP_ADDR, listenerPort);
 
   while (true)
   {
     // Block for msg receipt
-    short unsigned int sourcePort;
-    string sourceAddr;
-    int inMsgSize = listenSocket.recvFrom(inMsg, MAX_MSG_SIZE, sourceAddr, 
-                                          sourcePort);
+    char *inMsg;
+    inMsg = (char *)malloc (MAX_MSG_SIZE);
+    memset(inMsg, 0, MAX_MSG_SIZE);
+    int inMsgSize = listenSocket.recv(inMsg, MAX_MSG_SIZE);
+    inMsg[inMsgSize] = '\0';
 
     thread handlerThread (pigMsgHandler, inMsgSize, inMsg);
+    handlerThread.detach();
   }
 }		/* -----  end of function listenerFlow  ----- */
 

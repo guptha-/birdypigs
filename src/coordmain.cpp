@@ -17,22 +17,46 @@
 #include "../inc/coordinc.h"
 using namespace std;
 
+/* ===  FUNCTION  ==============================================================
+ *         Name:  listenerFlow
+ *  Description:  The coordinator listens for incoming messages here.
+ * =============================================================================
+ */
+static void listenerFlow ()
+{ 
+  UDPSocket listenSocket (COM_IP_ADDR, COORD_LISTEN_PORT);
+
+  while (true)
+  { 
+    // Block for msg receipt
+    char *inMsg;
+    inMsg = (char *)malloc (MAX_MSG_SIZE);
+    memset(inMsg, 0, MAX_MSG_SIZE);
+    int inMsgSize = listenSocket.recv(inMsg, MAX_MSG_SIZE);
+    inMsg[inMsgSize] = '\0';
+
+    thread handlerThread (coordMsgHandler, inMsgSize, inMsg);
+    handlerThread.detach();
+  }
+}   /* -----  end of function listenerFlow  ----- */
+
+
 
 /* ===  FUNCTION  ==============================================================
  *         Name:  initRand
  *  Description:  This function initializes the random number generator.
  * =============================================================================
  */
-static void initRand ()
+void initRand ()
 {
-  fstream configFile;
+/*  fstream configFile;
   char str[4];
   int seed;
   configFile.open("/dev/urandom");
   configFile.get(str, 4);
 
-  seed = atoi(str);
-  srand(seed);
+  seed = atoi(str);*/
+  srand(time(NULL));
 }		/* -----  end of function initRand  ----- */
 
 
@@ -42,7 +66,25 @@ static void initRand ()
  */
 int spawnPigs (vector<int> pigPorts)
 {
-  // Fill this up once a skeleton of the pig's code is done
+  for (auto &curPort : pigPorts)
+  {
+    int child = fork();
+    if (child < 0)
+    {
+      cout<<"Problem spawning pigs!"<<endl;
+      return EXIT_FAILURE;
+    }
+    else if (child > 0)
+    {
+      // Child address space
+      char strCurPort[5];
+      memset(strCurPort, 0, 5);
+      sprintf(strCurPort, "%d", curPort);
+      cout<<(execl ("./bin/pig", "pig", (const char *)strCurPort, NULL));
+      cout<<errno;
+      exit(0);
+    }
+  }
   return EXIT_SUCCESS;
 }		/* -----  end of function spawnPigs  ----- */
 /* ===  FUNCTION  ==============================================================
@@ -75,6 +117,12 @@ static void getWallPosns (int numberWalls, vector<int> &wallPosns)
     }
     wallPosns.push_back(posn);
   }
+  cout<<"Wall posns\t";
+  for (auto &wallLoc : wallPosns)
+  {
+    cout<<wallLoc<<"\t";
+  }
+  cout<<endl;
 }		/* -----  end of function getWallPosns  ----- */
 
 
@@ -122,6 +170,12 @@ static void getPigPosns (int numberPigs, vector<int> &wallPosns,
     }
     pigPosns.push_back(posn);
   }
+  cout<<"Pig Positions\t";
+  for (auto &pigLoc : pigPosns)
+  {
+    cout<<pigLoc<<"\t";
+  }
+  cout<<endl;
 }		/* -----  end of function getPigPosns  ----- */
 
 
@@ -139,7 +193,7 @@ static int getPigPorts (vector<int> &pigPorts)
     cout<<"No port config file found.\n";
     return EXIT_FAILURE;
   }
-  cout<<"The port numbers are:"<<endl;
+  cout<<"Port numbers \t";
   while (true)
   {
     getline(portFile, str);
@@ -148,10 +202,17 @@ static int getPigPorts (vector<int> &pigPorts)
       break;
     }
     int portNum = atoi(str.c_str());
+    if (portNum == COORD_LISTEN_PORT)
+    {
+      cout<<portNum<<" is the port the coordinator listens at! Remove from"<<
+        "port list!"<<endl;
+      return EXIT_FAILURE;
+    }
     pigPorts.push_back(portNum);
-    cout<<portNum<<endl;
+    cout<<portNum<<"\t";
     fflush(stdout);
   }
+  cout<<endl;
 
   return EXIT_SUCCESS;
 }		/* -----  end of function getPigPorts  ----- */
@@ -161,7 +222,7 @@ static int getPigPorts (vector<int> &pigPorts)
  *  Description:  Control for each game flows from here.
  * =============================================================================
  */
-static void startGame (int numberPigs, vector<int> &pigPorts)
+static void startGame (vector<int> &pigPorts)
 {
   // Calculate number of walls
   int numberWalls = rand() % (MAX_WALLS + 1); // Limit number of walls
@@ -169,34 +230,16 @@ static void startGame (int numberPigs, vector<int> &pigPorts)
   vector<int> wallPosns;
   getWallPosns (numberWalls, wallPosns);
 
-  // TODO remove
-  cout<<"Pig ports:"<<endl;
-  for (auto &temp : pigPorts)
-  {
-    cout<<temp<<endl;
-  }
-
-  cout<<"Wall positions:"<<endl;
-  for (auto &temp : wallPosns)
-  {
-    cout<<temp<<endl;
-  }
-
   vector<int> pigPosns;
-  getPigPosns (numberPigs, wallPosns, pigPosns);
-
-  cout<<"Pig positions:"<<endl;
-  for (auto &temp : pigPosns)
-  {
-    cout<<temp<<endl;
-  }
-
- if (coordSendPosnMsg (pigPorts, wallPosns, pigPosns) 
-     == EXIT_FAILURE)
+  getPigPosns (pigPorts.size(), wallPosns, pigPosns);
+ 
+  if (coordSendPosnMsg (pigPorts, wallPosns, pigPosns) 
+      == EXIT_FAILURE)
   {
     cout<<"Could not send positions to closest pig."<<endl;
     cout<<"Next iteration of the game will proceed"<<endl;
   }
+
   return;
 }		/* -----  end of function startGame  ----- */
 
@@ -211,16 +254,6 @@ int main(int argc, char **argv)
   // Initialize the random number generator
   initRand();
 
-  int number;
-  if (argc == 2)
-  {
-    number = atoi(argv[1]);
-  }
-  else
-  {
-    number = DEF_NUM_PIGS;
-  }
-
   vector<int> pigPorts;
   if (EXIT_FAILURE == getPigPorts (pigPorts))
   {
@@ -232,11 +265,18 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   }
 
-  while (true)
+  // Give the spawned pigs a chance to get their bearings
+  sleep(1);
+
+  // The listener is in a separate plane of existance
+  thread listenerThread (listenerFlow);
+  listenerThread.detach();
+
+//  while (true)
   {
     // Start an instance of the game
-    startGame(number, pigPorts);
-    sleep(5);
+    startGame(pigPorts);
+    sleep(50);
   }
 
   return EXIT_SUCCESS;

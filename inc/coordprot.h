@@ -5,5 +5,7 @@
 using namespace std;
 int coordSendPosnMsg (vector<int> pigPorts, vector<int> wallPosns, 
                        vector<int> pigPosns);
+void coordMsgHandler (int inMsgSize, char *inMsg);
+void initRand ();
 
 #endif
