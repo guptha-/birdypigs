@@ -17,7 +17,8 @@
 
 enum MessageTypes
 {
-  INIT_POSN_MSG=1
+  INIT_POSN_MSG=1,
+  INFORM_PHY_NBR_MSG
 };
 
 #endif

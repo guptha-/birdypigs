@@ -76,6 +76,15 @@ int coordSendPosnMsg (vector<int> pigPorts, vector<int> wallPosns,
   
   // This is the message sent at the beginning of each launch. This 
   // gives details about the other pigs and walls.
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X---- Src Port ----->
+  <---- Pig Count ----X---- Wall Count --->
+  <---- Pig Port 1 ---X---- Pig Port 2 .... Pig Port N -->
+  <---- Pig Loc 1 ----X---- Pig Loc 2 ..... Pig Loc N --->
+  <---- Wall Loc 1 ---X---- Wall Loc 2 .... Wall Loc M -->
+  <----- Bird Loc ----X---- Hop Limit ---->
+  */
   char actualOutMsg[MAX_MSG_SIZE];
   char *outMsg = actualOutMsg;
   int outMsgSize = 0;

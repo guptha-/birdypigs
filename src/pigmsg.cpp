@@ -57,21 +57,22 @@ static void computeLogicalNeighbors ()
       }
     }
 
-    if (myPort == minElem)
-    {
-      gPigOwnNode.logNbrPorts[0] = maxElem;
-      gPigOwnNode.logNbrPorts[1] = higherPort;
-    }
-    else if (myPort == maxElem)
-    {
-      gPigOwnNode.logNbrPorts[0] = lowerPort;
-      gPigOwnNode.logNbrPorts[1] = minElem;
-    }
-    else
-    {
-      gPigOwnNode.logNbrPorts[0] = lowerPort;
-      gPigOwnNode.logNbrPorts[1] = higherPort;
-    }
+  }
+
+  if (myPort == minElem)
+  {
+    gPigOwnNode.logNbrPorts[0] = maxElem;
+    gPigOwnNode.logNbrPorts[1] = higherPort;
+  }
+  else if (myPort == maxElem)
+  {
+    gPigOwnNode.logNbrPorts[0] = lowerPort;
+    gPigOwnNode.logNbrPorts[1] = minElem;
+  }
+  else
+  {
+    gPigOwnNode.logNbrPorts[0] = lowerPort;
+    gPigOwnNode.logNbrPorts[1] = higherPort;
   }
   gPigOtherMutex.unlock();
 
@@ -80,8 +81,131 @@ static void computeLogicalNeighbors ()
 
 
 /* ===  FUNCTION  ==============================================================
+ *         Name:  handlePhyNbrMsg
+ *  Description:  This function handles a physical nbr message
+ * =============================================================================
+ */
+static void handlePhyNbrMsg (int inMsgSize, char *inMsg)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X---- Dest Port ---->
+  <----- Dest Loc ----X---- Hop Limit ---->
+  */
+  char *permInMsg = inMsg;
+  int permInMsgSize = inMsgSize;
+  
+  // For message type
+  inMsg += MSG_TYPE_SIZE;
+  inMsgSize -= MSG_TYPE_SIZE;
+
+  if (inMsgSize < SRC_PORT_SIZE + PORT_LOC_SIZE + HOP_LIMIT_SIZE)
+  {
+    cout<<"Corrupted message at pig "<<gPigOwnNode.portNumber<<endl;
+    return;
+  }
+
+  short unsigned int destPort;
+  memcpy (&destPort, inMsg, SRC_PORT_SIZE);
+  destPort = ntohs(destPort);
+  inMsg += SRC_PORT_SIZE;
+
+  cout<<gPigOwnNode.portNumber<<": Rec phy nbr msg for "<<destPort<<endl;
+  short unsigned int destLoc;
+  memcpy (&destLoc, inMsg, PORT_LOC_SIZE);
+  destLoc = ntohs(destLoc);
+  inMsg += PORT_LOC_SIZE;
+
+  short unsigned int hopLimit;
+  memcpy (&hopLimit, inMsg, HOP_LIMIT_SIZE);
+  hopLimit = ntohs(hopLimit);
+
+  if (destPort != gPigOwnNode.portNumber)
+  {
+    if (gPigOwnNode.logNbrPorts[1] == 0)
+    {
+      // We don't know the topology yet. Can't forward.
+      return;
+    }
+    if (hopLimit == 0)
+    {
+      return;
+    }
+    // Forward it on.
+    hopLimit--;
+    hopLimit = htons(hopLimit);
+    memcpy (inMsg, &hopLimit, HOP_LIMIT_SIZE);
+    cout<<gPigOwnNode.portNumber<<": Forwarding nbr msg for "<<destPort<<endl;
+    sendMsg(permInMsg, permInMsgSize, gPigOwnNode.logNbrPorts[1]);
+    return;
+  }
+
+  // We are the intended recepient.
+  cout<<gPigOwnNode.portNumber<<": Neighbor warning received, moving to "<<
+    destLoc<<endl;
+  gPigOwnNode.physLoc = destLoc;
+
+  return;
+}		/* -----  end of function informPhysicalNeighbor  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  informPhysicalNeighbor
+ *  Description:  This function tries to inform physical neighbors to move.
+ * =============================================================================
+ */
+void informPhysicalNeighbor (unsigned short int nbrPort, 
+                             unsigned short int nbrLoc)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X---- Dest Port ---->
+  <----- Dest Loc ----X---- Hop Limit ---->
+  */
+
+  cout<<gPigOwnNode.portNumber<<": Trying to inform physical nbr "<<nbrPort
+    <<endl;
+  char actualOutMsg[MAX_MSG_SIZE];
+  char *outMsg = actualOutMsg;
+  int outMsgSize = 0;
+  if ((MSG_TYPE_SIZE + 2 * SRC_PORT_SIZE +  
+      HOP_LIMIT_SIZE) > MAX_MSG_SIZE)
+  {
+    cout<<"Message is too big to be sent"<<endl;
+    return;
+  }
+
+  short unsigned int msgType = INFORM_PHY_NBR_MSG;
+  msgType = htons(msgType);
+  memcpy (outMsg, &msgType, MSG_TYPE_SIZE);
+  outMsg += MSG_TYPE_SIZE;
+  outMsgSize += MSG_TYPE_SIZE;
+
+  nbrPort = htons(nbrPort);
+  memcpy (outMsg, &nbrPort, SRC_PORT_SIZE);
+  outMsg += SRC_PORT_SIZE;
+  outMsgSize += SRC_PORT_SIZE;
+
+  nbrLoc = htons(nbrLoc);
+  memcpy (outMsg, &nbrLoc, PORT_LOC_SIZE);
+  outMsg += PORT_LOC_SIZE;
+  outMsgSize += PORT_LOC_SIZE;
+
+  gPigOtherMutex.lock();
+  short unsigned int hopLimit = gPigOtherList.portNumber.size();
+  gPigOtherMutex.unlock();
+  hopLimit = htons(hopLimit);
+  memcpy (outMsg, &hopLimit, HOP_LIMIT_SIZE);
+  outMsg += HOP_LIMIT_SIZE;
+  outMsgSize += HOP_LIMIT_SIZE;
+
+  sendMsg(actualOutMsg, outMsgSize, gPigOwnNode.logNbrPorts[1]);
+  return;
+}		/* -----  end of function informPhysicalNeighbor  ----- */
+
+/* ===  FUNCTION  ==============================================================
  *         Name:  checkIfAffected
  *  Description:  This function sees if we are affected by the bird's landing.
+ *                If any of our physical neighbors will be affected, we warn.
  * =============================================================================
  */
 static void checkIfAffected ()
@@ -198,6 +322,36 @@ static void checkIfAffected ()
   short unsigned int origLoc = gPigOwnNode.physLoc;
   if (moveLeft == true)
   {
+    // Let us see if there is any physical neighbor to our left. If there is, we
+    // can try to save it.
+    gPigOtherMutex.lock();
+    unsigned short int index = 0;
+    for (auto &pigLoc : gPigOtherList.physLoc)
+    {
+      if ((pigLoc - myLoc) == -1)
+      {
+        bool nbrCanMove = true;
+        for (auto &tempPigLoc : gPigOtherList.physLoc)
+        {
+          if ((tempPigLoc - pigLoc) == -1)
+          {
+            // The neighbor can't move, don't send anything.
+            nbrCanMove = false;
+            break;
+          }
+        }
+        if (nbrCanMove == true)
+        {
+          gPigOtherMutex.unlock();
+          informPhysicalNeighbor (gPigOtherList.portNumber[index], pigLoc - 1);
+          gPigOtherMutex.lock();
+        }
+        break;
+      }
+      index++;
+    }
+    gPigOtherMutex.unlock();
+
     // Updating myLoc. The global may have changed in the prev iteration.
     cout<<gPigOwnNode.portNumber<<": Trying to move left from "<<myLoc
       <<endl;
@@ -254,6 +408,37 @@ static void checkIfAffected ()
       cout<<gPigOwnNode.portNumber<<": Trying to move right from "
         <<gPigOwnNode.physLoc<<endl;
     }
+
+    // Let us see if there is any physical neighbor to our right. If there is, 
+    // we can try to save it.
+    gPigOtherMutex.lock();
+    unsigned short int index = 0;
+    for (auto &pigLoc : gPigOtherList.physLoc)
+    {
+      index++;
+      if ((pigLoc - myLoc) == 1)
+      {
+        bool nbrCanMove = true;
+        for (auto &tempPigLoc : gPigOtherList.physLoc)
+        {
+          if ((tempPigLoc - pigLoc) == 1)
+          {
+            // The neighbor can't move, don't send anything.
+            nbrCanMove = false;
+            break;
+          }
+        }
+        if (nbrCanMove == true)
+        {
+          gPigOtherMutex.lock();
+          informPhysicalNeighbor (gPigOtherList.portNumber[index], pigLoc + 1);
+          gPigOtherMutex.unlock();
+        }
+        break;
+      }
+    }
+    gPigOtherMutex.unlock();
+
     while (true)
     {
       if (origLoc > gPigOwnNode.physLoc)
@@ -304,6 +489,7 @@ static void checkIfAffected ()
 
   return;
 }		/* -----  end of function checkIfAffected  ----- */
+
 /* ===  FUNCTION  ==============================================================
  *         Name:  handleInitPosnMsg
  * =============================================================================
@@ -312,6 +498,16 @@ static void handleInitPosnMsg (int inMsgSize, char *inMsg)
 {
   // This is the message sent at the beginning of each launch. This 
   // gives details about the other pigs and walls.
+
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X---- Src Port ----->
+  <---- Pig Count ----X---- Wall Count --->
+  <---- Pig Port 1 ---X---- Pig Port 2 .... Pig Port N -->
+  <---- Pig Loc 1 ----X---- Pig Loc 2 ..... Pig Loc N --->
+  <---- Wall Loc 1 ---X---- Wall Loc 2 .... Wall Loc M -->
+  <----- Bird Loc ----X---- Hop Limit ---->
+  */
   short unsigned int srcPort;
   char *permInMsg = inMsg;
   int permInMsgSize = inMsgSize;
@@ -505,7 +701,6 @@ void pigMsgHandler (int inMsgSize, char *tempInMsg)
   memset(inMsg, 0, MAX_MSG_SIZE);
   memcpy(inMsg, tempInMsg, MAX_MSG_SIZE);
   free (tempInMsg);
-  cout<<gPigOwnNode.portNumber<<": Received msg"<<endl;
   if (inMsgSize < 2)
   {
     cout<<"Corrupted message at pig "<<gPigOwnNode.portNumber<<endl;
@@ -522,6 +717,11 @@ void pigMsgHandler (int inMsgSize, char *tempInMsg)
     case INIT_POSN_MSG:
     {
       handleInitPosnMsg (inMsgSize, inMsg);
+      break;
+    }
+    case INFORM_PHY_NBR_MSG:
+    {
+      handlePhyNbrMsg (inMsgSize, inMsg);
       break;
     }
     default:
