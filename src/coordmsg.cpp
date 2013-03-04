@@ -61,6 +61,171 @@ void sendMsg(char *outMsg, int outMsgSize, unsigned short int destPort)
   return;
 }		/* -----  end of function sendMsg  ----- */
 
+
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  checkIfAffected
+ *  Description:  Returns 1 if affected.
+ * =============================================================================
+ */
+static int checkIfAffected (vector<int> pigPorts, vector<int> wallPosns, 
+                            vector<int> pigPosns, int birdLoc, int destPort,
+                            int destLoc)
+{
+  // Most of the complex logic in this function is due to the assumption that
+  // 2 pigs can't be in the same location.
+  int myLoc = destLoc;
+  // All the walls are assumed to have a height of 3 units
+  if (((birdLoc - myLoc) > 3) || ((birdLoc - myLoc) < -3))
+  {
+    // Not even a wall present close by with a pig adjacent can crush us.
+    return 0;
+  }
+
+  bool moveRight = false;
+  bool moveLeft = false;
+  for (auto &wallLoc : wallPosns)
+  {
+    if (birdLoc != wallLoc)
+    {
+      // The wall won't directly be hit by the bird.
+      continue;
+    }
+    if (((wallLoc - myLoc) < 3) && ((wallLoc - myLoc) > 0)) 
+    {
+      // Wall is to the right and the bird will hit it. Backpedal to the left.
+      moveLeft = true;
+      break;
+    }
+    if (((wallLoc - myLoc) > -3) && ((wallLoc - myLoc) < 0))
+    {
+      // Wall is to the left and the bird will hit it. Move right.
+      moveRight = true;
+      break;
+    }
+    if ((wallLoc - myLoc) == 3)
+    {
+      // There needs to be a pig adjacent to us for anything to go amiss
+      for (auto &pigLoc : pigPosns)
+      {
+        if ((pigLoc - myLoc) == 1)
+        {
+          moveLeft = true;
+          break;
+        }
+      }
+    }
+    else if ((wallLoc - myLoc) == -3)
+    {
+      // There needs to be a pig adjacent to us for anything to go amiss
+      for (auto &pigLoc : pigPosns)
+      {
+        if ((pigLoc - myLoc) == -1)
+        {
+          moveRight = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // At this point, if the bird hits a stone column, we know what to do.
+  // We now need to see what to do if the bird hits a pig.
+  
+  // A pig can't topple a wall.
+  
+
+  for (auto &pigLoc : pigPosns)
+  {
+    if (pigLoc != birdLoc)
+    {
+      continue;
+    }
+    if ((pigLoc - myLoc) == 1)
+    {
+      moveLeft = true;
+      break;
+    }
+    if ((pigLoc - myLoc) == -1)
+    {
+      moveRight = true;
+      break;
+    }
+  }
+
+
+  // Finally, if we are hit directly, move left or right.
+  if (myLoc == birdLoc)
+  {
+    moveLeft = true;
+    moveRight = true;
+  }
+
+  if ((moveLeft == true) || (moveRight == true))
+  {
+    return 1;
+  }
+  return 0;
+}		/* -----  end of function checkIfAffected  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  coordSendBirdLandMsg
+ *  Description:  This function sends the bird lands message to all the pigs. 
+ *                This information does not propagate via the p2p network 
+ *                because there is no global clock.
+ * =============================================================================
+ */
+int coordSendBirdLandMsg (vector<int> pigPorts, vector<int> wallPosns, 
+                          vector<int> pigPosns, int birdLoc)
+{
+  // This is the message sent once the bird has landed.
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X---- Dest Loc ----->
+  <----- Is Target? -->
+  */
+  char actualOutMsg[MAX_MSG_SIZE];
+  char *outMsg = actualOutMsg;
+  int outMsgSize = 0;
+  if ((MSG_TYPE_SIZE + PORT_LOC_SIZE + IS_TARGET_SIZE) > MAX_MSG_SIZE)
+  {
+    cout<<"Message is too big to be sent"<<endl;
+    return EXIT_FAILURE;
+  }
+
+  short unsigned int msgType = BIRD_LAND_MSG;
+  msgType = htons(msgType);
+  memcpy (outMsg, &msgType, MSG_TYPE_SIZE);
+  outMsg += MSG_TYPE_SIZE;
+  outMsgSize += MSG_TYPE_SIZE;
+
+  char *storedMsgPtr = outMsg;
+  unsigned short int index = 0;
+  unsigned short int storedMsgSize = outMsgSize;
+  for (auto &destPort : pigPorts)
+  {
+    outMsg = storedMsgPtr;
+    outMsgSize = storedMsgSize;
+    short unsigned int destLoc = pigPosns[index];
+    destLoc = htons(destLoc);
+    memcpy (outMsg, &destLoc, PORT_LOC_SIZE);
+    outMsg += PORT_LOC_SIZE;
+    outMsgSize += PORT_LOC_SIZE;
+
+    unsigned short int isTarget = checkIfAffected(pigPorts, wallPosns, pigPosns,
+                                                  birdLoc, destPort, destLoc);
+
+    isTarget = htons(isTarget);
+    memcpy (outMsg, &isTarget, IS_TARGET_SIZE);
+    outMsg += IS_TARGET_SIZE;
+    outMsgSize += IS_TARGET_SIZE;
+    
+    sendMsg(actualOutMsg, outMsgSize, destPort);
+    index++;
+  }
+
+  return EXIT_SUCCESS;
+}		/* -----  end of function coordSendPosnMsg  ----- */
 /* ===  FUNCTION  ==============================================================
  *         Name:  coordSendPosnMsg
  *  Description:  This function sends the positions of all the pigs to the 
@@ -68,7 +233,7 @@ void sendMsg(char *outMsg, int outMsgSize, unsigned short int destPort)
  * =============================================================================
  */
 int coordSendPosnMsg (vector<int> pigPorts, vector<int> wallPosns, 
-                       vector<int> pigPosns)
+                       vector<int> pigPosns, int birdLoc)
 {
   auto closestPig = min_element (pigPosns.begin(), pigPosns.end()) -
                     pigPosns.begin();
@@ -145,7 +310,6 @@ int coordSendPosnMsg (vector<int> pigPorts, vector<int> wallPosns,
     outMsgSize += WALL_LOC_SIZE;
   }
 
-  short unsigned int birdLoc = (rand() % MAX_POSN) + 1;
   birdLoc = htons(birdLoc);
   memcpy (outMsg, &birdLoc, PORT_LOC_SIZE);
   outMsg += PORT_LOC_SIZE;

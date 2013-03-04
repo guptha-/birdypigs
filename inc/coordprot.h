@@ -4,8 +4,9 @@
 #include "../inc/coordinc.h"
 using namespace std;
 int coordSendPosnMsg (vector<int> pigPorts, vector<int> wallPosns, 
-                       vector<int> pigPosns);
+                       vector<int> pigPosns, int birdLoc);
 void coordMsgHandler (int inMsgSize, char *inMsg);
-void initRand ();
+int coordSendBirdLandMsg (vector<int> pigPorts, vector<int> wallPosns, 
+                          vector<int> pigPosns, int birdLoc);
 
 #endif

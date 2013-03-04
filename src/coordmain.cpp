@@ -233,11 +233,20 @@ static void startGame (vector<int> &pigPorts)
   vector<int> pigPosns;
   getPigPosns (pigPorts.size(), wallPosns, pigPosns);
  
-  if (coordSendPosnMsg (pigPorts, wallPosns, pigPosns) 
+  short unsigned int birdLoc = (rand() % MAX_POSN) + 1;
+  if (coordSendPosnMsg (pigPorts, wallPosns, pigPosns, birdLoc) 
       == EXIT_FAILURE)
   {
     cout<<"Could not send positions to closest pig."<<endl;
     cout<<"Next iteration of the game will proceed"<<endl;
+  }
+
+  sleep (3);
+
+  if (coordSendBirdLandMsg (pigPorts, wallPosns, pigPosns, birdLoc)
+      == EXIT_FAILURE)
+  {
+    cout<<"Could not send bird land msg to closest pig."<<endl;
   }
 
   return;

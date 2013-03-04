@@ -11,14 +11,16 @@
 #define PORT_LOC_SIZE 2
 #define WALL_LOC_SIZE 2
 #define HOP_LIMIT_SIZE 2
-#define COM_IP_ADDR "127.0.0.2"
+#define IS_TARGET_SIZE 2
+#define COM_IP_ADDR "127.0.0.1"
 #define COORD_LISTEN_PORT 24544
 #define MAX_PORT 65535
 
 enum MessageTypes
 {
   INIT_POSN_MSG=1,
-  INFORM_PHY_NBR_MSG
+  INFORM_PHY_NBR_MSG,
+  BIRD_LAND_MSG
 };
 
 #endif
