@@ -22,13 +22,16 @@ void handleWasHitUni (char *inMsg, int inMsgSize)
   <----- Msg Type ----X----- Hit Count --->
   <- Hit Pig Port 1 --...
   */
-  cout<<"COORD: Got the unicast was hit response"<<endl;
   short unsigned int hitCount;
   memcpy (&hitCount, inMsg, WAS_HIT_SIZE);
   hitCount = ntohs(hitCount);
   inMsg += WAS_HIT_SIZE;
   inMsgSize -= WAS_HIT_SIZE;
 
+  score += hitCount;
+  gPigPortsMutex.lock();
+  total ++;
+  gPigPortsMutex.unlock();
   if (hitCount == 0)
   {
     cout<<"No pig was hit!"<<endl;
@@ -44,18 +47,8 @@ void handleWasHitUni (char *inMsg, int inMsgSize)
     cout<<pigPort<<" was HIT!"<<endl;
   }
 
-  sleep(10);
+  cout<<"Score is "<<score<<" in "<<total<<" runs"<<endl;
 
-  if (EXIT_FAILURE == coordSpawnPigs ())
-  {
-    return;
-  }
-
-  // Give the spawned pigs a chance to get their bearings
-  sleep(1);
-
-  cout<<endl<<endl<<"STARTING NEW GAME"<<endl;
-  coordStartGame();
   return;
 }		/* -----  end of function handleWasHitUni  ----- */
 
@@ -68,8 +61,8 @@ void handleWasHitUni (char *inMsg, int inMsgSize)
  */
 void coordMsgHandler (int inMsgSize, char *tempInMsg)
 {
-  char actualInMsg[MAX_MSG_SIZE];
-  char *inMsg = actualInMsg;
+  char msg[MAX_MSG_SIZE];
+  char *inMsg = msg;
   memset(inMsg, 0, MAX_MSG_SIZE);
   memcpy(inMsg, tempInMsg, MAX_MSG_SIZE);
   free (tempInMsg);
@@ -110,8 +103,15 @@ void coordMsgHandler (int inMsgSize, char *tempInMsg)
  */
 void sendMsg(char *outMsg, int outMsgSize, unsigned short int destPort)
 {
-  UDPSocket sendSocket;
-  sendSocket.sendTo(outMsg, outMsgSize, COM_IP_ADDR, destPort);
+  try
+  {
+    static UDPSocket sendSocket;
+    sendSocket.sendTo(outMsg, outMsgSize, COM_IP_ADDR, destPort);
+  }
+  catch (SocketException &e)
+  {
+    cout<<"COORD: "<<e.what()<<endl;
+  }
   return;
 }		/* -----  end of function sendMsg  ----- */
 

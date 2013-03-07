@@ -20,6 +20,8 @@ using namespace std;
 // Global pigPorts
 vector<int> pigPorts;
 mutex gPigPortsMutex;
+atomic<int> score;
+atomic<int> total;
 
 /* ===  FUNCTION  ==============================================================
  *         Name:  initRand
@@ -42,6 +44,7 @@ int coordSpawnPigs ()
   vector<int> tempPigPorts(pigPorts);
   gPigPortsMutex.unlock();
   system ("killall -q -9 pig");
+  system ("killall -q -9 pig");
   for (auto &curPort : tempPigPorts)
   {
     int child = fork();
@@ -57,6 +60,7 @@ int coordSpawnPigs ()
       memset(strCurPort, 0, 5);
       sprintf(strCurPort, "%d", curPort);
       cout<<(execl ("./bin/pig", "pig", (const char *)strCurPort, NULL));
+      cout<<"Problem spawning child"<<endl;
       cout<<errno;
       exit(0);
     }
@@ -211,13 +215,13 @@ void coordStartGame ()
   vector<int> pigPosns;
   gPigPortsMutex.lock();
   getPigPosns (pigPorts.size(), wallPosns, pigPosns);
- 
   auto closestPig = min_element (pigPosns.begin(), pigPosns.end()) -
                     pigPosns.begin();
   short unsigned int closestPigPort = pigPorts[closestPig];
   gPigPortsMutex.unlock();
 
   short unsigned int birdLoc = (rand() % MAX_POSN) + 1;
+  cout<<"Bird Position: "<<birdLoc<<endl;
   if (coordSendPosnMsg (wallPosns, pigPosns, birdLoc) 
       == EXIT_FAILURE)
   {
@@ -225,21 +229,23 @@ void coordStartGame ()
     cout<<"Next iteration of the game will proceed"<<endl;
   }
 
-  sleep (3);
+  // Random sleep before bird launch
+  sleep (rand() % (MAX_BIRD_TIME + 1));
 
   if (coordSendBirdLandMsg (wallPosns, pigPosns, birdLoc)
       == EXIT_FAILURE)
   {
     cout<<"Could not send bird land msg to closest pig."<<endl;
   }
-  sleep(1);
+  gPigPortsMutex.lock();
+  sleep(pigPorts.size());
+  gPigPortsMutex.unlock();
 
   if (coordSendStatusReqMsg (closestPigPort)
       == EXIT_FAILURE)
   {
     cout<<"Could not send bird land msg to closest pig."<<endl;
   }
-
 
   return;
 }		/* -----  end of function coordStartGame  ----- */
@@ -252,30 +258,25 @@ void coordStartGame ()
  */
 static void listenerFlow ()
 { 
-  UDPSocket listenSocket (COM_IP_ADDR, COORD_LISTEN_PORT);
 
-  // Start game the first time
-  if (EXIT_FAILURE == coordSpawnPigs ())
+  // Block for msg receipt
+  char *inMsg;
+  inMsg = (char *)malloc (MAX_MSG_SIZE);
+  memset(inMsg, 0, MAX_MSG_SIZE);
+  int inMsgSize;
+
+  try
   {
-    return;
+    static UDPSocket listenSocket (COM_IP_ADDR, COORD_LISTEN_PORT);
+    inMsgSize = listenSocket.recv(inMsg, MAX_MSG_SIZE);
   }
-
-  // Give the spawned pigs a chance to get their bearings
-  sleep(1);
-
-  coordStartGame();
-  while (true)
-  { 
-    // Block for msg receipt
-    char *inMsg;
-    inMsg = (char *)malloc (MAX_MSG_SIZE);
-    memset(inMsg, 0, MAX_MSG_SIZE);
-    int inMsgSize = listenSocket.recv(inMsg, MAX_MSG_SIZE);
-    inMsg[inMsgSize] = '\0';
-
-    thread handlerThread (coordMsgHandler, inMsgSize, inMsg);
-    handlerThread.detach();
+  catch (SocketException &e)
+  {
+    cout<<"COORD: "<<e.what()<<endl;
   }
+  inMsg[inMsgSize] = '\0';
+
+  coordMsgHandler(inMsgSize, inMsg);
 }   /* -----  end of function listenerFlow  ----- */
 
 
@@ -289,12 +290,28 @@ int main(int argc, char **argv)
   // Initialize the random number generator
   initRand();
 
+  score = 0;
+  total = 0;
   if (EXIT_FAILURE == getPigPorts ())
   {
     return EXIT_FAILURE;
   }
 
-  listenerFlow();
+  while (true)
+  {
+    if (EXIT_FAILURE == coordSpawnPigs ())
+    {
+      return EXIT_FAILURE;
+    }
+
+    // Give the spawned pigs a chance to get their bearings
+    sleep(1);
+
+    thread handlerThread (listenerFlow);
+    handlerThread.detach();
+    coordStartGame();
+    sleep (1);
+  }
 
   return EXIT_SUCCESS;
 }				/* ----------  end of function main  ---------- */

@@ -26,7 +26,6 @@ SRCP = pigmain.cpp\
 			 pigmsg.cpp\
 			 PracticalSocket.cpp
 INCP = piginc.h\
-			 pigconst.h\
 			 comconst.h\
 			 PracticalSocket.h
 OBJP = $(SRCP:.cpp=.o)

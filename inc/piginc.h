@@ -16,7 +16,6 @@
 #include <deque>
 
 #include "../inc/PracticalSocket.h"
-#include "../inc/pigconst.h"
 #include "../inc/pigprot.h"
 #include "../inc/pigds.h"
 #include "../inc/comconst.h"

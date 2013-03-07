@@ -34,10 +34,18 @@ static void listenerFlow (int listenerPort)
   while (true)
   {
     // Block for msg receipt
+    int inMsgSize;
     char *inMsg;
     inMsg = (char *)malloc (MAX_MSG_SIZE);
     memset(inMsg, 0, MAX_MSG_SIZE);
-    int inMsgSize = listenSocket.recv(inMsg, MAX_MSG_SIZE);
+    try
+    {
+      inMsgSize = listenSocket.recv(inMsg, MAX_MSG_SIZE);
+    }
+    catch (SocketException &e)
+    {
+      cout<<gPigOwnNode.portNumber<<": "<<e.what()<<endl;
+    }
     inMsg[inMsgSize] = '\0';
 
     thread handlerThread (pigMsgHandler, inMsgSize, inMsg);

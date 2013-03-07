@@ -11,6 +11,7 @@
 #include <string>
 #include <thread>
 #include <mutex>
+#include <atomic>
 #include <arpa/inet.h>
 
 #include "coordconst.h"
@@ -20,4 +21,6 @@
 
 extern vector<int> pigPorts;
 extern mutex gPigPortsMutex;
+extern atomic<int> score;
+extern atomic<int> total;
 #endif

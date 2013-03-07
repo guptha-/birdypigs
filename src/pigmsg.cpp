@@ -15,8 +15,15 @@
  */
 void sendMsg(char *outMsg, int outMsgSize, unsigned short int destPort)
 { 
-  UDPSocket sendSocket;
-  sendSocket.sendTo(outMsg, outMsgSize, COM_IP_ADDR, destPort);
+  try
+  {
+    static UDPSocket sendSocket;
+    sendSocket.sendTo(outMsg, outMsgSize, COM_IP_ADDR, destPort);
+  }
+  catch (SocketException &e)
+  {
+    cout<<gPigOwnNode.portNumber<<": Not enough data to send msg"<<endl;
+  }
   return;
 }   /* -----  end of function sendMsg  ----- */
 
@@ -110,7 +117,6 @@ static void handlePhyNbrMsg (int inMsgSize, char *inMsg)
   destPort = ntohs(destPort);
   inMsg += SRC_PORT_SIZE;
 
-  cout<<gPigOwnNode.portNumber<<": Rec phy nbr msg for "<<destPort<<endl;
   short unsigned int destLoc;
   memcpy (&destLoc, inMsg, PORT_LOC_SIZE);
   destLoc = ntohs(destLoc);
@@ -135,7 +141,6 @@ static void handlePhyNbrMsg (int inMsgSize, char *inMsg)
     hopLimit--;
     hopLimit = htons(hopLimit);
     memcpy (inMsg, &hopLimit, HOP_LIMIT_SIZE);
-    cout<<gPigOwnNode.portNumber<<": Forwarding nbr msg for "<<destPort<<endl;
     sendMsg(permInMsg, permInMsgSize, gPigOwnNode.logNbrPorts[1]);
     return;
   }
@@ -377,7 +382,6 @@ void handleWasHitMul (int inMsgSize, char *inMsg)
     index++;
   }
 
-  cout<<gPigOwnNode.portNumber<<": Got multi response"<<gPigOtherList.portNumber.size()<<endl;
   if (gPigOtherList.gotResp.size() == (gPigOtherList.portNumber.size() - 1))
   {
     // We've got all responses. Let's send the final collection.
@@ -852,7 +856,6 @@ void handleBirdLandMsg (int inMsgSize, char *inMsg)
     if ((gPigOwnNode.physLoc == 0) || (gPigOwnNode.physLoc == destLoc))
     {
       // We have not moved.
-      cout<<gPigOwnNode.portNumber<<": Bird is hit"<<endl;
       gPigOwnNode.isHit = true;
     }
   }
@@ -896,7 +899,6 @@ static void handleInitPosnMsg (int inMsgSize, char *inMsg)
   memcpy (inMsg, &newSrcPort, SRC_PORT_SIZE);
   inMsg += SRC_PORT_SIZE;
   inMsgSize -= SRC_PORT_SIZE;
-  cout<<"Src Port "<<srcPort<<"\t";
 
   if (inMsgSize < NUMBER_PIGS_SIZE)
   {
@@ -1016,14 +1018,12 @@ static void handleInitPosnMsg (int inMsgSize, char *inMsg)
   birdLoc = ntohs(birdLoc);
   inMsg += PORT_LOC_SIZE;
   inMsgSize -= PORT_LOC_SIZE;
-  cout<<"Bird position: "<<birdLoc<<"\t";
   gPigOwnNode.birdLoc = birdLoc;
 
   short unsigned int hopCount;
   memcpy (&hopCount, inMsg, HOP_LIMIT_SIZE);
   hopCount = ntohs(hopCount);
   hopCount--;
-  cout<<"Hop count: "<<hopCount<<endl;
   
   // We compute the logical neighbors, now that we know all the port numbers.
   computeLogicalNeighbors();
@@ -1044,7 +1044,7 @@ static void handleInitPosnMsg (int inMsgSize, char *inMsg)
   // At this stage, the message has been read, internal data structures updated.
   // Now, we should decide where to forward it to.
 
-  cout<<"Own port: "<<gPigOwnNode.portNumber<<" Nbrs: "<<gPigOwnNode.logNbrPorts[0]<<", "<<gPigOwnNode.logNbrPorts[1]<<" Src port: "<<srcPort<<endl;
+  sleep (1);
   if (isClosestNode == true)
   {
     // Send to both logical neighbors
