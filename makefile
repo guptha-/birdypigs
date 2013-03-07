@@ -1,6 +1,6 @@
 DFLAG = -g
 WFLAG = -Wall
-C11FLAG = -std=c++11
+C11FLAG = -std=c++0x
 THREADFLAG = -pthread
 
 SRCC = coordmain.cpp\

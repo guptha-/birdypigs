@@ -17,30 +17,9 @@
 #include "../inc/coordinc.h"
 using namespace std;
 
-/* ===  FUNCTION  ==============================================================
- *         Name:  listenerFlow
- *  Description:  The coordinator listens for incoming messages here.
- * =============================================================================
- */
-static void listenerFlow ()
-{ 
-  UDPSocket listenSocket (COM_IP_ADDR, COORD_LISTEN_PORT);
-
-  while (true)
-  { 
-    // Block for msg receipt
-    char *inMsg;
-    inMsg = (char *)malloc (MAX_MSG_SIZE);
-    memset(inMsg, 0, MAX_MSG_SIZE);
-    int inMsgSize = listenSocket.recv(inMsg, MAX_MSG_SIZE);
-    inMsg[inMsgSize] = '\0';
-
-    thread handlerThread (coordMsgHandler, inMsgSize, inMsg);
-    handlerThread.detach();
-  }
-}   /* -----  end of function listenerFlow  ----- */
-
-
+// Global pigPorts
+vector<int> pigPorts;
+mutex gPigPortsMutex;
 
 /* ===  FUNCTION  ==============================================================
  *         Name:  initRand
@@ -49,24 +28,21 @@ static void listenerFlow ()
  */
 void initRand ()
 {
-/*  fstream configFile;
-  char str[4];
-  int seed;
-  configFile.open("/dev/urandom");
-  configFile.get(str, 4);
-
-  seed = atoi(str);*/
   srand(time(NULL));
 }		/* -----  end of function initRand  ----- */
 
 
 /* ===  FUNCTION  ==============================================================
- *         Name:  spawnPigs
+ *         Name:  coordSpawnPigs
  * =============================================================================
  */
-int spawnPigs (vector<int> pigPorts)
+int coordSpawnPigs ()
 {
-  for (auto &curPort : pigPorts)
+  gPigPortsMutex.lock();
+  vector<int> tempPigPorts(pigPorts);
+  gPigPortsMutex.unlock();
+  system ("killall -q -9 pig");
+  for (auto &curPort : tempPigPorts)
   {
     int child = fork();
     if (child < 0)
@@ -86,7 +62,7 @@ int spawnPigs (vector<int> pigPorts)
     }
   }
   return EXIT_SUCCESS;
-}		/* -----  end of function spawnPigs  ----- */
+}		/* -----  end of function coordSpawnPigs  ----- */
 /* ===  FUNCTION  ==============================================================
  *         Name:  getWallPosns
  * =============================================================================
@@ -183,7 +159,7 @@ static void getPigPosns (int numberPigs, vector<int> &wallPosns,
  *         Name:  getPigPorts
  * =============================================================================
  */
-static int getPigPorts (vector<int> &pigPorts)
+static int getPigPorts ()
 {
   ifstream portFile;
   string str;
@@ -194,6 +170,7 @@ static int getPigPorts (vector<int> &pigPorts)
     return EXIT_FAILURE;
   }
   cout<<"Port numbers \t";
+  gPigPortsMutex.lock();
   while (true)
   {
     getline(portFile, str);
@@ -212,17 +189,18 @@ static int getPigPorts (vector<int> &pigPorts)
     cout<<portNum<<"\t";
     fflush(stdout);
   }
+  gPigPortsMutex.unlock();
   cout<<endl;
 
   return EXIT_SUCCESS;
 }		/* -----  end of function getPigPorts  ----- */
 
 /* ===  FUNCTION  ==============================================================
- *         Name:  startGame
+ *         Name:  coordStartGame
  *  Description:  Control for each game flows from here.
  * =============================================================================
  */
-static void startGame (vector<int> &pigPorts)
+void coordStartGame ()
 {
   // Calculate number of walls
   int numberWalls = rand() % (MAX_WALLS + 1); // Limit number of walls
@@ -231,10 +209,16 @@ static void startGame (vector<int> &pigPorts)
   getWallPosns (numberWalls, wallPosns);
 
   vector<int> pigPosns;
+  gPigPortsMutex.lock();
   getPigPosns (pigPorts.size(), wallPosns, pigPosns);
  
+  auto closestPig = min_element (pigPosns.begin(), pigPosns.end()) -
+                    pigPosns.begin();
+  short unsigned int closestPigPort = pigPorts[closestPig];
+  gPigPortsMutex.unlock();
+
   short unsigned int birdLoc = (rand() % MAX_POSN) + 1;
-  if (coordSendPosnMsg (pigPorts, wallPosns, pigPosns, birdLoc) 
+  if (coordSendPosnMsg (wallPosns, pigPosns, birdLoc) 
       == EXIT_FAILURE)
   {
     cout<<"Could not send positions to closest pig."<<endl;
@@ -243,14 +227,56 @@ static void startGame (vector<int> &pigPorts)
 
   sleep (3);
 
-  if (coordSendBirdLandMsg (pigPorts, wallPosns, pigPosns, birdLoc)
+  if (coordSendBirdLandMsg (wallPosns, pigPosns, birdLoc)
+      == EXIT_FAILURE)
+  {
+    cout<<"Could not send bird land msg to closest pig."<<endl;
+  }
+  sleep(1);
+
+  if (coordSendStatusReqMsg (closestPigPort)
       == EXIT_FAILURE)
   {
     cout<<"Could not send bird land msg to closest pig."<<endl;
   }
 
+
   return;
-}		/* -----  end of function startGame  ----- */
+}		/* -----  end of function coordStartGame  ----- */
+
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  listenerFlow
+ *  Description:  The coordinator listens for incoming messages here.
+ * =============================================================================
+ */
+static void listenerFlow ()
+{ 
+  UDPSocket listenSocket (COM_IP_ADDR, COORD_LISTEN_PORT);
+
+  // Start game the first time
+  if (EXIT_FAILURE == coordSpawnPigs ())
+  {
+    return;
+  }
+
+  // Give the spawned pigs a chance to get their bearings
+  sleep(1);
+
+  coordStartGame();
+  while (true)
+  { 
+    // Block for msg receipt
+    char *inMsg;
+    inMsg = (char *)malloc (MAX_MSG_SIZE);
+    memset(inMsg, 0, MAX_MSG_SIZE);
+    int inMsgSize = listenSocket.recv(inMsg, MAX_MSG_SIZE);
+    inMsg[inMsgSize] = '\0';
+
+    thread handlerThread (coordMsgHandler, inMsgSize, inMsg);
+    handlerThread.detach();
+  }
+}   /* -----  end of function listenerFlow  ----- */
 
 
 /* ===  FUNCTION  ==============================================================
@@ -263,30 +289,12 @@ int main(int argc, char **argv)
   // Initialize the random number generator
   initRand();
 
-  vector<int> pigPorts;
-  if (EXIT_FAILURE == getPigPorts (pigPorts))
+  if (EXIT_FAILURE == getPigPorts ())
   {
     return EXIT_FAILURE;
   }
 
-  if (EXIT_FAILURE == spawnPigs (pigPorts))
-  {
-    return EXIT_FAILURE;
-  }
-
-  // Give the spawned pigs a chance to get their bearings
-  sleep(1);
-
-  // The listener is in a separate plane of existance
-  thread listenerThread (listenerFlow);
-  listenerThread.detach();
-
-//  while (true)
-  {
-    // Start an instance of the game
-    startGame(pigPorts);
-    sleep(50);
-  }
+  listenerFlow();
 
   return EXIT_SUCCESS;
 }				/* ----------  end of function main  ---------- */

@@ -141,12 +141,287 @@ static void handlePhyNbrMsg (int inMsgSize, char *inMsg)
   }
 
   // We are the intended recepient.
-  cout<<gPigOwnNode.portNumber<<": Neighbor warning received, moving to "<<
+  cout<<gPigOwnNode.portNumber<<": Neighbor warning received, now at "<<
     destLoc<<endl;
   gPigOwnNode.physLoc = destLoc;
 
   return;
 }		/* -----  end of function informPhysicalNeighbor  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  sendWasHitUni
+ *  Description:  This function sends the list of pigs that was hit back to the
+ *                coordinator. This function is hit only on the closest pig.
+ * =============================================================================
+ */
+void sendWasHitUni ()
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X----- Hit Count --->
+  <- Hit Pig Port 1 --...
+  */
+  cout<<gPigOwnNode.portNumber<<": Sending unicast response"<<endl;
+  char msg[MAX_MSG_SIZE];
+  char *outMsg = msg;
+  memset(outMsg, 0, MAX_MSG_SIZE);
+  char *permOutMsg = outMsg;
+  int outMsgSize = 0;
+
+  short unsigned int msgType = WAS_HIT_UNI_MSG;
+  msgType = htons(msgType);
+  memcpy (outMsg, &msgType, MSG_TYPE_SIZE);
+  outMsg += MSG_TYPE_SIZE;
+  outMsgSize += MSG_TYPE_SIZE;
+
+  char *outMsgHitCountPtr = outMsg;
+  outMsg += SRC_PORT_SIZE;
+  outMsgSize += SRC_PORT_SIZE;
+
+  gPigOtherMutex.lock();
+  unsigned short int index = 0;
+  unsigned short int wasHitCount = 0;
+  for (auto &wasHit : gPigOtherList.wasHit)
+  {
+    if (((wasHit == false) &&
+         (gPigOwnNode.portNumber != gPigOtherList.portNumber[index])) ||
+        ((gPigOwnNode.portNumber == gPigOtherList.portNumber[index]) &&
+         (gPigOwnNode.isHit == false)))
+    {
+      // This pig was not hit
+      index++;
+      continue;
+    }
+    short unsigned int portNumber = htons(gPigOtherList.portNumber[index]);
+    memcpy (outMsg, &portNumber, SRC_PORT_SIZE);
+    outMsg += SRC_PORT_SIZE;
+    outMsgSize += SRC_PORT_SIZE;
+    index++;
+    wasHitCount++;
+  }
+  wasHitCount = htons(wasHitCount);
+  memcpy (outMsgHitCountPtr, &wasHitCount, WAS_HIT_SIZE);
+  gPigOtherMutex.unlock();
+
+  sendMsg(permOutMsg, outMsgSize, COORD_LISTEN_PORT);
+
+  return;
+
+}		/* -----  end of function sendWasHitUni  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  sendWasHitMul
+ *  Description:  This function sends the was hit message to the closest one
+ * =============================================================================
+ */
+void sendWasHitMul (char *outMsg)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X----- Dest Port --->
+  <----- Src Port ----X----- Was Hit ----->
+  */
+  // We are just modifying the incoming msg a little and sending it back
+  char *permOutMsg = outMsg;
+  int outMsgSize = 0;
+
+  short unsigned int msgType = WAS_HIT_MUL_MSG;
+  msgType = htons(msgType);
+  memcpy (outMsg, &msgType, MSG_TYPE_SIZE);
+  outMsg += MSG_TYPE_SIZE;
+  outMsgSize += MSG_TYPE_SIZE;
+
+  outMsg += SRC_PORT_SIZE;
+  outMsgSize += SRC_PORT_SIZE;
+
+  short unsigned int srcPort = gPigOwnNode.portNumber;
+  srcPort = htons(srcPort);
+  memcpy (outMsg, &srcPort, SRC_PORT_SIZE);
+  outMsg += SRC_PORT_SIZE;
+  outMsgSize += SRC_PORT_SIZE;
+
+  short unsigned int wasHit = 0;
+  if (gPigOwnNode.isHit == true)
+  {
+    wasHit = 1;
+  }
+  wasHit = htons(wasHit);
+  memcpy (outMsg, &wasHit, WAS_HIT_SIZE);
+  outMsg += WAS_HIT_SIZE;
+  outMsgSize += WAS_HIT_SIZE;
+
+  sendMsg(permOutMsg, outMsgSize, gPigOwnNode.logNbrPorts[0]);
+
+  return;
+
+}		/* -----  end of function sendWasHitMul  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  handleStatusMulReqMsg
+ *  Description:  This function forwards if not meant for us or responds back on
+ *                same path if it is meant for us.
+ * =============================================================================
+ */
+void handleStatusMulReqMsg (int inMsgSize, char *inMsg)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X----- Src Port --->
+  */
+
+  char *outMsg = inMsg;
+  int outMsgSize = inMsgSize;
+  if ((MSG_TYPE_SIZE + SRC_PORT_SIZE) > inMsgSize)
+  {
+    cout<<gPigOwnNode.portNumber<<": Message is corrupted"<<endl;
+    return;
+  }
+
+  // For message type
+  inMsg += MSG_TYPE_SIZE;
+  inMsgSize -= MSG_TYPE_SIZE;
+
+  unsigned short int srcPort;
+  memcpy (&srcPort, inMsg, SRC_PORT_SIZE);
+  srcPort = ntohs(srcPort);
+  inMsg += SRC_PORT_SIZE;
+  inMsgSize -= SRC_PORT_SIZE;
+
+  if (srcPort == gPigOwnNode.portNumber)
+  {
+    // The msg has come back to us
+    return;
+  }
+
+  // We are not the originator. Pass it along the ring.
+  sendMsg(outMsg, outMsgSize, gPigOwnNode.logNbrPorts[1]);
+  // Respond to the originator
+  sendWasHitMul (outMsg);
+}		/* -----  end of function handleStatusMulReqMsg  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  handleWasHitMul
+ *  Description:  This function handles the was hit message from the other peers
+ *                The node which receives this should be the closest node.
+ * =============================================================================
+ */
+void handleWasHitMul (int inMsgSize, char *inMsg)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X----- Dest Port --->
+  <----- Src Port ----X----- Was Hit ----->
+  */
+
+  char *outMsg = inMsg;
+  int outMsgSize = inMsgSize;
+  if ((MSG_TYPE_SIZE + 2 * SRC_PORT_SIZE) > inMsgSize)
+  {
+    cout<<gPigOwnNode.portNumber<<": Message is corrupted"<<endl;
+    return;
+  }
+
+  // For message type
+  inMsg += MSG_TYPE_SIZE;
+  inMsgSize -= MSG_TYPE_SIZE;
+
+  unsigned short int destPort;
+  memcpy (&destPort, inMsg, SRC_PORT_SIZE);
+  destPort = ntohs(destPort);
+  inMsg += SRC_PORT_SIZE;
+  inMsgSize -= SRC_PORT_SIZE;
+
+  unsigned short int srcPort;
+  memcpy (&srcPort, inMsg, SRC_PORT_SIZE);
+  srcPort = ntohs(srcPort);
+  inMsg += SRC_PORT_SIZE;
+  inMsgSize -= SRC_PORT_SIZE;
+
+  if (destPort != gPigOwnNode.portNumber)
+  {
+    // Not meant for us. Pass it on
+    sendMsg(outMsg, outMsgSize, gPigOwnNode.logNbrPorts[0]);
+    return;
+  }
+
+  unsigned short int wasHit;
+  memcpy (&wasHit, inMsg, WAS_HIT_SIZE);
+  wasHit = ntohs(wasHit);
+  inMsg += WAS_HIT_SIZE;
+  inMsgSize -= WAS_HIT_SIZE;
+
+  // We are the closest node to the bird. We need to collect the information
+  // and send it back in a collated format.
+  
+  gPigOtherMutex.lock();
+  unsigned short int index = 0;
+  for (auto &pigPort : gPigOtherList.portNumber)
+  {
+    if (pigPort == srcPort)
+    {
+      // this is the pig that has sent the was hit response
+      // TODO cant use this. need to change
+      if (gPigOtherList.wasHit.size() == 0)
+      {
+        // We have received this message in error before the game has started.
+        // Possibly an artifact of the previous game. Ignore.
+        gPigOtherMutex.unlock();
+        return;
+      }
+      if (wasHit == 1)
+      {
+        gPigOtherList.wasHit[index] = true;
+      }
+      gPigOtherList.gotResp.push_back(true);
+    }
+    index++;
+  }
+
+  cout<<gPigOwnNode.portNumber<<": Got multi response"<<gPigOtherList.portNumber.size()<<endl;
+  if (gPigOtherList.gotResp.size() == (gPigOtherList.portNumber.size() - 1))
+  {
+    // We've got all responses. Let's send the final collection.
+    cout<<"We have all the responses"<<endl;
+    gPigOtherMutex.unlock();
+    sendWasHitUni();
+    gPigOtherMutex.lock();
+  }
+  gPigOtherMutex.unlock();
+}		/* -----  end of function handleWasHitMul  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  sendStatusReqMsg
+ *  Description:  This function sends the status request message to all the
+ *                other peers and waits for the response.
+ * =============================================================================
+ */
+void sendStatusReqMsg ()
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X----- Src Port --->
+  */
+  char actualOutMsg[MAX_MSG_SIZE];
+  char *outMsg = actualOutMsg;
+  int outMsgSize = 0;
+
+  short unsigned int msgType = STATUS_REQ_MUL_MSG;
+  msgType = htons(msgType);
+  memcpy (outMsg, &msgType, MSG_TYPE_SIZE);
+  outMsg += MSG_TYPE_SIZE;
+  outMsgSize += MSG_TYPE_SIZE;
+
+  short unsigned int srcPort = gPigOwnNode.portNumber;
+  srcPort = htons(srcPort);
+  memcpy (outMsg, &srcPort, SRC_PORT_SIZE);
+  outMsg += SRC_PORT_SIZE;
+  outMsgSize += SRC_PORT_SIZE;
+
+  sendMsg(actualOutMsg, outMsgSize, gPigOwnNode.logNbrPorts[1]);
+
+  return;
+
+}		/* -----  end of function sendStatusReqMsg  ----- */
 
 /* ===  FUNCTION  ==============================================================
  *         Name:  informPhysicalNeighbor
@@ -224,7 +499,9 @@ static void checkIfAffected ()
   bool moveRight = false;
   bool moveLeft = false;
   gPigWallMutex.lock();
-  for (auto &wallLoc : gPigWallList.physLoc)
+  vector<int> tempWallPhysLoc(gPigWallList.physLoc);
+  gPigWallMutex.unlock();
+  for (auto &wallLoc : tempWallPhysLoc)
   {
     if (birdLoc != wallLoc)
     {
@@ -276,7 +553,6 @@ static void checkIfAffected ()
       gPigOtherMutex.unlock();
     }
   }
-  gPigWallMutex.unlock();
 
   // At this point, if the bird hits a stone column, we know what to do.
   // We now need to see what to do if the bird hits a pig.
@@ -285,12 +561,21 @@ static void checkIfAffected ()
   
   gPigOtherMutex.lock();
 
+  unsigned short int pigIndex = 0;
   for (auto &pigLoc : gPigOtherList.physLoc)
   {
     if (pigLoc != birdLoc)
     {
       continue;
     }
+
+    if (gPigOwnNode.portNumber == gPigOtherList.portNumber[pigIndex])
+    {
+      // This scenario is rare. Occurs when we have already moved, but receive
+      // a message that causes us to try to move again.
+      continue;
+    }
+    
     if ((pigLoc - myLoc) == 1)
     {
       cout<<gPigOwnNode.portNumber<<": Nearby pig hit!"<<endl;
@@ -303,6 +588,7 @@ static void checkIfAffected ()
       moveRight = true;
       break;
     }
+    pigIndex++;
   }
 
   gPigOtherMutex.unlock();
@@ -331,6 +617,11 @@ static void checkIfAffected ()
       if ((pigLoc - myLoc) == -1)
       {
         bool nbrCanMove = true;
+        if (pigLoc == 1)
+        {
+          nbrCanMove = false;
+          break;
+        }
         for (auto &tempPigLoc : gPigOtherList.physLoc)
         {
           if ((tempPigLoc - pigLoc) == -1)
@@ -340,6 +631,17 @@ static void checkIfAffected ()
             break;
           }
         }
+        gPigWallMutex.lock();
+        for (auto &tempWallLoc : gPigWallList.physLoc)
+        {
+          if ((tempWallLoc - pigLoc) == -1)
+          {
+            // The neighbor can't move, don't send anything.
+            nbrCanMove = false;
+            break;
+          }
+        }
+        gPigWallMutex.unlock();
         if (nbrCanMove == true)
         {
           gPigOtherMutex.unlock();
@@ -415,10 +717,14 @@ static void checkIfAffected ()
     unsigned short int index = 0;
     for (auto &pigLoc : gPigOtherList.physLoc)
     {
-      index++;
       if ((pigLoc - myLoc) == 1)
       {
         bool nbrCanMove = true;
+        if (pigLoc == MAX_POSN)
+        {
+          nbrCanMove = false;
+          break;
+        }
         for (auto &tempPigLoc : gPigOtherList.physLoc)
         {
           if ((tempPigLoc - pigLoc) == 1)
@@ -428,14 +734,26 @@ static void checkIfAffected ()
             break;
           }
         }
+        gPigWallMutex.lock();
+        for (auto &tempWallLoc : gPigWallList.physLoc)
+        {
+          if ((tempWallLoc - pigLoc) == 1)
+          {
+            // The neighbor can't move, don't send anything.
+            nbrCanMove = false;
+            break;
+          }
+        }
+        gPigWallMutex.unlock();
         if (nbrCanMove == true)
         {
-          gPigOtherMutex.lock();
-          informPhysicalNeighbor (gPigOtherList.portNumber[index], pigLoc + 1);
           gPigOtherMutex.unlock();
+          informPhysicalNeighbor (gPigOtherList.portNumber[index], pigLoc + 1);
+          gPigOtherMutex.lock();
         }
         break;
       }
+      index++;
     }
     gPigOtherMutex.unlock();
 
@@ -444,6 +762,7 @@ static void checkIfAffected ()
       if (origLoc > gPigOwnNode.physLoc)
       {
         // We have already moved left. No need to move right now.
+        cout<<gPigOwnNode.portNumber<<": We've already moved left"<<endl;
         break;
       }
       // Updating myLoc. The global may have changed in the prev iteration.
@@ -489,6 +808,56 @@ static void checkIfAffected ()
 
   return;
 }		/* -----  end of function checkIfAffected  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  handleBirdLandMsg
+ *  Description:  This function handles the bird landing event. It just sets the
+ *                global isHit variable to true if the pig has not moved from
+ *                the affected place.
+ * =============================================================================
+ */
+void handleBirdLandMsg (int inMsgSize, char *inMsg)
+{
+  // This is the message received once the bird has landed.
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X---- Dest Loc ----->
+  <----- Is Target? -->
+  */
+  if ((MSG_TYPE_SIZE + PORT_LOC_SIZE + IS_TARGET_SIZE) > inMsgSize)
+  {
+    cout<<gPigOwnNode.portNumber<<": Message is corrupted"<<endl;
+    return;
+  }
+
+  // For message type
+  inMsg += MSG_TYPE_SIZE;
+  inMsgSize -= MSG_TYPE_SIZE;
+
+  unsigned short int destLoc;
+  memcpy (&destLoc, inMsg, PORT_LOC_SIZE);
+  destLoc = ntohs(destLoc);
+  inMsg += PORT_LOC_SIZE;
+  inMsgSize -= PORT_LOC_SIZE;
+
+  unsigned short int isTarget;
+  memcpy (&isTarget, inMsg, IS_TARGET_SIZE);
+  isTarget = ntohs(isTarget);
+  inMsg += IS_TARGET_SIZE;
+  inMsgSize -= IS_TARGET_SIZE;
+
+  if (isTarget == 1)
+  {
+    // Have to see if we have moved.
+    if ((gPigOwnNode.physLoc == 0) || (gPigOwnNode.physLoc == destLoc))
+    {
+      // We have not moved.
+      cout<<gPigOwnNode.portNumber<<": Bird is hit"<<endl;
+      gPigOwnNode.isHit = true;
+    }
+  }
+
+}		/* -----  end of function handleBirdLandMsg  ----- */
 
 /* ===  FUNCTION  ==============================================================
  *         Name:  handleInitPosnMsg
@@ -550,8 +919,22 @@ static void handleInitPosnMsg (int inMsgSize, char *inMsg)
   inMsg += NUMBER_WALLS_SIZE;
   inMsgSize -= NUMBER_WALLS_SIZE;
 
+  bool isClosestNode = false;
+  if (srcPort == 0)
+  {
+    // This msg was from the coordinator
+    isClosestNode = true;
+  }
+
+
   gPigOtherMutex.lock();
   short unsigned int tempNumberPigs = numberPigs;
+  if (gPigOtherList.portNumber.size() > numberPigs)
+  {
+    // This is a duplicate message, can return
+    gPigOtherMutex.unlock();
+    return;
+  }
   while (tempNumberPigs--)
   {
     short unsigned int otherPort;
@@ -566,6 +949,11 @@ static void handleInitPosnMsg (int inMsgSize, char *inMsg)
     inMsg += OTHER_PORT_SIZE;
     inMsgSize -= OTHER_PORT_SIZE;
     gPigOtherList.portNumber.push_back(otherPort);
+    // This just updates the wasHit flag. It can be true only in the closest pig
+    if (isClosestNode == true)
+    {
+      gPigOtherList.wasHit.push_back(false);
+    }
   }
 
   while (numberPigs--)
@@ -603,13 +991,8 @@ static void handleInitPosnMsg (int inMsgSize, char *inMsg)
   // We have updated our own physical location
 
   gPigOtherMutex.unlock();
-  gPigOwnNode.isClosestNode = false;
-  if (srcPort == 0)
-  {
-    gPigOwnNode.isClosestNode = true;
-  }
-
   gPigWallMutex.lock();
+
   while (numberWalls--)
   {
     short unsigned int wallLoc;
@@ -662,7 +1045,7 @@ static void handleInitPosnMsg (int inMsgSize, char *inMsg)
   // Now, we should decide where to forward it to.
 
   cout<<"Own port: "<<gPigOwnNode.portNumber<<" Nbrs: "<<gPigOwnNode.logNbrPorts[0]<<", "<<gPigOwnNode.logNbrPorts[1]<<" Src port: "<<srcPort<<endl;
-  if (gPigOwnNode.isClosestNode == true)
+  if (isClosestNode == true)
   {
     // Send to both logical neighbors
     sendMsg(permInMsg, permInMsgSize, gPigOwnNode.logNbrPorts[0]);
@@ -686,6 +1069,23 @@ static void handleInitPosnMsg (int inMsgSize, char *inMsg)
   return;
 
 }		/* -----  end of function handleInitMsg  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  handleStatusUniReqMsg
+ *  Description:  This function forwards if not meant for us or responds back on
+ *                same path if it is meant for us.
+ * =============================================================================
+ */
+void handleStatusUniReqMsg (int inMsgSize, char *inMsg)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ---->
+  */
+
+  cout<<gPigOwnNode.portNumber<<": Received unicast status request."<<endl;
+  sendStatusReqMsg ();
+}		/* -----  end of function handleStatusUniReqMsg  ----- */
 
 
 /* ===  FUNCTION  ==============================================================
@@ -722,6 +1122,26 @@ void pigMsgHandler (int inMsgSize, char *tempInMsg)
     case INFORM_PHY_NBR_MSG:
     {
       handlePhyNbrMsg (inMsgSize, inMsg);
+      break;
+    }
+    case BIRD_LAND_MSG:
+    {
+      handleBirdLandMsg (inMsgSize, inMsg);
+      break;
+    }
+    case STATUS_REQ_UNI_MSG:
+    {
+      handleStatusUniReqMsg (inMsgSize, inMsg);
+      break;
+    }
+    case STATUS_REQ_MUL_MSG:
+    {
+      handleStatusMulReqMsg (inMsgSize, inMsg);
+      break;
+    }
+    case WAS_HIT_MUL_MSG:
+    {
+      handleWasHitMul (inMsgSize, inMsg);
       break;
     }
     default:

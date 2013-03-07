@@ -10,6 +10,57 @@
 #include "../inc/coordinc.h"
 
 /* ===  FUNCTION  ==============================================================
+ *         Name:  handleWasHitUni
+ *  Description:  This function receives the list of hit pigs from the closest
+ *                pig
+ * =============================================================================
+ */
+void handleWasHitUni (char *inMsg, int inMsgSize)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X----- Hit Count --->
+  <- Hit Pig Port 1 --...
+  */
+  cout<<"COORD: Got the unicast was hit response"<<endl;
+  short unsigned int hitCount;
+  memcpy (&hitCount, inMsg, WAS_HIT_SIZE);
+  hitCount = ntohs(hitCount);
+  inMsg += WAS_HIT_SIZE;
+  inMsgSize -= WAS_HIT_SIZE;
+
+  if (hitCount == 0)
+  {
+    cout<<"No pig was hit!"<<endl;
+  }
+  while (hitCount--)
+  {
+    unsigned short int pigPort;
+    memcpy (&pigPort, inMsg, SRC_PORT_SIZE);
+    pigPort = ntohs(pigPort);
+    inMsg += SRC_PORT_SIZE;
+    inMsgSize -= SRC_PORT_SIZE;
+
+    cout<<pigPort<<" was HIT!"<<endl;
+  }
+
+  sleep(10);
+
+  if (EXIT_FAILURE == coordSpawnPigs ())
+  {
+    return;
+  }
+
+  // Give the spawned pigs a chance to get their bearings
+  sleep(1);
+
+  cout<<endl<<endl<<"STARTING NEW GAME"<<endl;
+  coordStartGame();
+  return;
+}		/* -----  end of function handleWasHitUni  ----- */
+
+
+/* ===  FUNCTION  ==============================================================
  *         Name:  coordMsgHandler
  *  Description:  This function accepts all the messages, finds out their type,
  *                and calls their respective handlers.
@@ -24,7 +75,7 @@ void coordMsgHandler (int inMsgSize, char *tempInMsg)
   free (tempInMsg);
   if (inMsgSize < 2)
   {
-    cout<<"Corrupted message at coord";
+    cout<<"Corrupted message at coord"<<endl;
     return;
   }
 
@@ -36,8 +87,11 @@ void coordMsgHandler (int inMsgSize, char *tempInMsg)
 
   switch (msgType)
   {
-    case INIT_POSN_MSG:
+    case WAS_HIT_UNI_MSG:
     { 
+      // This is the only msg that is received at the coordinator. After 
+      // processing, the game is done.
+      handleWasHitUni (inMsg, inMsgSize);
       break;
     }
     default:
@@ -68,12 +122,12 @@ void sendMsg(char *outMsg, int outMsgSize, unsigned short int destPort)
  *  Description:  Returns 1 if affected.
  * =============================================================================
  */
-static int checkIfAffected (vector<int> pigPorts, vector<int> wallPosns, 
+static int checkIfAffected (vector<int> wallPosns, 
                             vector<int> pigPosns, int birdLoc, int destPort,
                             int destLoc)
 {
-  // Most of the complex logic in this function is due to the assumption that
-  // 2 pigs can't be in the same location.
+  // This function sees if the dest pig is affected by the bird in any way. If
+  // it is, a flag is set in the message sent notifying it of the bird landing.
   int myLoc = destLoc;
   // All the walls are assumed to have a height of 3 units
   if (((birdLoc - myLoc) > 3) || ((birdLoc - myLoc) < -3))
@@ -153,7 +207,6 @@ static int checkIfAffected (vector<int> pigPorts, vector<int> wallPosns,
     }
   }
 
-
   // Finally, if we are hit directly, move left or right.
   if (myLoc == birdLoc)
   {
@@ -168,6 +221,41 @@ static int checkIfAffected (vector<int> pigPorts, vector<int> wallPosns,
   return 0;
 }		/* -----  end of function checkIfAffected  ----- */
 
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  coordSendStatusReqMsg
+ *  Description:  This function sends the status request message to the closest
+ *                pig. The closest pig queries the other pigs and replies back
+ *                with the pig IDs of the hit pigs.
+ * =============================================================================
+ */
+int coordSendStatusReqMsg (int destPort)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ---->
+  */
+  char actualOutMsg[MAX_MSG_SIZE];
+  memset(&actualOutMsg, 0, MAX_MSG_SIZE);
+  char *outMsg = actualOutMsg;
+  int outMsgSize = 0;
+  if (MSG_TYPE_SIZE > MAX_MSG_SIZE)
+  {
+    cout<<"Message is too big to be sent"<<endl;
+    return EXIT_FAILURE;
+  }
+
+  short unsigned int msgType = STATUS_REQ_UNI_MSG;
+  msgType = htons(msgType);
+  memcpy (outMsg, &msgType, MSG_TYPE_SIZE);
+  outMsg += MSG_TYPE_SIZE;
+  outMsgSize += MSG_TYPE_SIZE;
+
+  sendMsg(actualOutMsg, outMsgSize, destPort);
+
+  return EXIT_SUCCESS;
+
+}		/* -----  end of function coordSendStatusReqMsg  ----- */
 /* ===  FUNCTION  ==============================================================
  *         Name:  coordSendBirdLandMsg
  *  Description:  This function sends the bird lands message to all the pigs. 
@@ -175,7 +263,7 @@ static int checkIfAffected (vector<int> pigPorts, vector<int> wallPosns,
  *                because there is no global clock.
  * =============================================================================
  */
-int coordSendBirdLandMsg (vector<int> pigPorts, vector<int> wallPosns, 
+int coordSendBirdLandMsg (vector<int> wallPosns, 
                           vector<int> pigPosns, int birdLoc)
 {
   // This is the message sent once the bird has landed.
@@ -185,6 +273,7 @@ int coordSendBirdLandMsg (vector<int> pigPorts, vector<int> wallPosns,
   <----- Is Target? -->
   */
   char actualOutMsg[MAX_MSG_SIZE];
+  memset(actualOutMsg, 0, MAX_MSG_SIZE);
   char *outMsg = actualOutMsg;
   int outMsgSize = 0;
   if ((MSG_TYPE_SIZE + PORT_LOC_SIZE + IS_TARGET_SIZE) > MAX_MSG_SIZE)
@@ -202,18 +291,20 @@ int coordSendBirdLandMsg (vector<int> pigPorts, vector<int> wallPosns,
   char *storedMsgPtr = outMsg;
   unsigned short int index = 0;
   unsigned short int storedMsgSize = outMsgSize;
-  for (auto &destPort : pigPorts)
+  gPigPortsMutex.lock();
+  vector<int> tempPigPorts(pigPorts);
+  gPigPortsMutex.unlock();
+  for (auto &destPort : tempPigPorts)
   {
     outMsg = storedMsgPtr;
     outMsgSize = storedMsgSize;
     short unsigned int destLoc = pigPosns[index];
+    unsigned short int isTarget = checkIfAffected(wallPosns, pigPosns,
+                                                  birdLoc, destPort, destLoc);
     destLoc = htons(destLoc);
     memcpy (outMsg, &destLoc, PORT_LOC_SIZE);
     outMsg += PORT_LOC_SIZE;
     outMsgSize += PORT_LOC_SIZE;
-
-    unsigned short int isTarget = checkIfAffected(pigPorts, wallPosns, pigPosns,
-                                                  birdLoc, destPort, destLoc);
 
     isTarget = htons(isTarget);
     memcpy (outMsg, &isTarget, IS_TARGET_SIZE);
@@ -225,19 +316,23 @@ int coordSendBirdLandMsg (vector<int> pigPorts, vector<int> wallPosns,
   }
 
   return EXIT_SUCCESS;
-}		/* -----  end of function coordSendPosnMsg  ----- */
+}		/* -----  end of function coordBirdLangMsg  ----- */
+
 /* ===  FUNCTION  ==============================================================
  *         Name:  coordSendPosnMsg
  *  Description:  This function sends the positions of all the pigs to the 
  *                closest pig. It also sends the landing posn of the bird.
  * =============================================================================
  */
-int coordSendPosnMsg (vector<int> pigPorts, vector<int> wallPosns, 
+int coordSendPosnMsg (vector<int> wallPosns, 
                        vector<int> pigPosns, int birdLoc)
 {
   auto closestPig = min_element (pigPosns.begin(), pigPosns.end()) -
                     pigPosns.begin();
-  short unsigned int closestPigPort = pigPorts[closestPig];
+  gPigPortsMutex.lock();
+  vector<int> tempPigPorts(pigPorts);
+  gPigPortsMutex.unlock();
+  short unsigned int closestPigPort = tempPigPorts[closestPig];
   
   // This is the message sent at the beginning of each launch. This 
   // gives details about the other pigs and walls.
@@ -254,7 +349,7 @@ int coordSendPosnMsg (vector<int> pigPorts, vector<int> wallPosns,
   char *outMsg = actualOutMsg;
   int outMsgSize = 0;
   if ((MSG_TYPE_SIZE + SRC_PORT_SIZE + NUMBER_PIGS_SIZE + NUMBER_WALLS_SIZE +
-      (pigPorts.size() * (OTHER_PORT_SIZE + PORT_LOC_SIZE)) +
+      (tempPigPorts.size() * (OTHER_PORT_SIZE + PORT_LOC_SIZE)) +
       (wallPosns.size() * WALL_LOC_SIZE) + PORT_LOC_SIZE + 
       HOP_LIMIT_SIZE) > MAX_MSG_SIZE)
   {
@@ -274,7 +369,7 @@ int coordSendPosnMsg (vector<int> pigPorts, vector<int> wallPosns,
   outMsg += SRC_PORT_SIZE;
   outMsgSize += SRC_PORT_SIZE;
 
-  short unsigned int numberPigs = pigPorts.size();
+  short unsigned int numberPigs = tempPigPorts.size();
   numberPigs = htons(numberPigs);
   memcpy (outMsg, &numberPigs, NUMBER_PIGS_SIZE);
   outMsg += NUMBER_PIGS_SIZE;
@@ -286,7 +381,7 @@ int coordSendPosnMsg (vector<int> pigPorts, vector<int> wallPosns,
   outMsg += NUMBER_WALLS_SIZE;
   outMsgSize += NUMBER_WALLS_SIZE;
 
-  for (auto &otherPort : pigPorts)
+  for (auto &otherPort : tempPigPorts)
   {
     otherPort = htons(otherPort);
     memcpy (outMsg, &otherPort, OTHER_PORT_SIZE);
@@ -315,7 +410,7 @@ int coordSendPosnMsg (vector<int> pigPorts, vector<int> wallPosns,
   outMsg += PORT_LOC_SIZE;
   outMsgSize += PORT_LOC_SIZE;
 
-  short unsigned int hopCount = pigPorts.size() / 2 + 1;
+  short unsigned int hopCount = tempPigPorts.size() / 2 + 1;
   hopCount = htons(hopCount);
   memcpy (outMsg, &hopCount, HOP_LIMIT_SIZE);
   outMsg += HOP_LIMIT_SIZE;

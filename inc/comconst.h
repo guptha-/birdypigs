@@ -2,7 +2,7 @@
 #define inc_COM_CONST
 
 #define MAX_MSG_SIZE 512
-#define MAX_POSN 15
+#define MAX_POSN 10
 #define MSG_TYPE_SIZE 2
 #define SRC_PORT_SIZE 2
 #define NUMBER_PIGS_SIZE 2
@@ -12,6 +12,7 @@
 #define WALL_LOC_SIZE 2
 #define HOP_LIMIT_SIZE 2
 #define IS_TARGET_SIZE 2
+#define WAS_HIT_SIZE 2
 #define COM_IP_ADDR "127.0.0.1"
 #define COORD_LISTEN_PORT 24544
 #define MAX_PORT 65535
@@ -20,7 +21,11 @@ enum MessageTypes
 {
   INIT_POSN_MSG=1,
   INFORM_PHY_NBR_MSG,
-  BIRD_LAND_MSG
+  BIRD_LAND_MSG,
+  STATUS_REQ_UNI_MSG,
+  WAS_HIT_UNI_MSG,
+  STATUS_REQ_MUL_MSG,
+  WAS_HIT_MUL_MSG
 };
 
 #endif

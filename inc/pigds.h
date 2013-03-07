@@ -10,8 +10,7 @@ typedef struct
   atomic<short unsigned int> logNbrPorts[2];
   atomic<short unsigned int> physLoc;
   atomic<short unsigned int> birdLoc;
-  atomic<bool> updated;
-  atomic<bool> isClosestNode;
+  atomic<bool> isHit;
 }PigOwnNode;
 extern PigOwnNode gPigOwnNode;
 // END pig's own info
@@ -21,6 +20,8 @@ struct sPigOtherList
 {
   vector<int> portNumber;
   vector<int> physLoc;
+  deque<bool> wasHit;
+  vector<bool> gotResp;
 };
 typedef struct sPigOtherList PigOtherList;
 extern mutex gPigOtherMutex;

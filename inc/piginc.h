@@ -13,6 +13,7 @@
 #include <atomic>
 #include <mutex>
 #include <thread>
+#include <deque>
 
 #include "../inc/PracticalSocket.h"
 #include "../inc/pigconst.h"
