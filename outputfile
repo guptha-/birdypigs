@@ -1,0 +1,124 @@
+Port numbers 	28672	28673	28674	28675	28676	25566	
+Wall posns	5	
+Pig Positions	3	9	8	1	2	6	
+Bird Position: 4
+28675: Received unicast status request.
+We have all the responses
+28675: Sending unicast response
+No pig was hit!
+Score is 0 in 1 runs
+Wall posns	2	
+Pig Positions	3	6	9	5	4	8	
+Bird Position: 4
+28676: Trying to move left from 4
+28676: Final Loc 4
+28676: Trying to move right from 4
+28676: Final Loc 4
+28675: Nearby pig hit!
+28675: Trying to move right from 5
+28675: Trying to inform physical nbr 28673
+28675: Nearby pig hit!
+28675: Trying to move right from 5
+28675: Trying to inform physical nbr 28673
+28675: Final Loc 5
+28673: Neighbor warning received, now at 7
+28672: I am hit!
+28672: Received unicast status request.
+We have all the responses
+28672: Sending unicast response
+28672 was HIT!
+28675 was HIT!
+28676 was HIT!
+Score is 3 in 2 runs
+Wall posns	4	
+Pig Positions	2	3	6	9	8	10	
+Bird Position: 9
+25566: Nearby pig hit!
+25566: Trying to move right from 10
+25566: Final Loc 10
+28676: Nearby pig hit!
+28676: Trying to move left from 8
+28676: Final Loc 7
+25566: I am hit!
+28675: I am hit!
+28672: Received unicast status request.
+We have all the responses
+28672: Sending unicast response
+28675 was HIT!
+25566 was HIT!
+Score is 5 in 3 runs
+Wall posns	
+Pig Positions	7	9	10	5	3	6	
+Bird Position: 6
+28675: Nearby pig hit!
+28675: Trying to move left from 5
+25566: Trying to inform physical nbr 28675
+25566: Trying to move left from 6
+25566: Final Loc 6
+25566: Trying to move right from 6
+25566: Trying to inform physical nbr 28672
+25566: Final Loc 6
+28672: Neighbor warning received, now at 8
+25566: I am hit!
+28676: Received unicast status request.
+We have all the responses
+28676: Sending unicast response
+25566 was HIT!
+Score is 6 in 4 runs
+Wall posns	4	8	
+Pig Positions	3	5	6	2	7	10	
+Bird Position: 2
+28675: Trying to move left from 2
+28675: Final Loc 1
+28675: We've already moved left
+28672: I am hit!
+28675: Received unicast status request.
+We have all the responses
+28675: Sending unicast response
+28672 was HIT!
+Score is 7 in 5 runs
+Wall posns	6	
+Pig Positions	8	1	2	9	10	5	
+Bird Position: 6
+28672: Nearby wall hit by bird!
+28672: Trying to move right from 8
+28672: Final Loc 8
+25566: Nearby wall hit by bird!
+25566: Trying to move left from 5
+25566: Final Loc 3
+28672: I am hit!
+28675: I am hit!
+28673: Received unicast status request.
+We have all the responses
+28673: Sending unicast response
+28672 was HIT!
+28675 was HIT!
+Score is 9 in 6 runs
+Wall posns	
+Pig Positions	1	10	3	4	7	9	
+Bird Position: 2
+28672: Received unicast status request.
+We have all the responses
+28672: Sending unicast response
+No pig was hit!
+Score is 9 in 7 runs
+Wall posns	
+Pig Positions	7	2	4	10	5	8	
+Bird Position: 2
+28673: Trying to move left from 2
+28673: Final Loc 1
+28673: Trying to inform physical nbr 28673
+28673: We've already moved left
+28673: Received unicast status request.
+We have all the responses
+28673: Sending unicast response
+No pig was hit!
+Score is 9 in 8 runs
+Wall posns	
+Pig Positions	7	2	10	8	5	9	
+Bird Position: 1
+28673: Received unicast status request.
+We have all the responses
+28673: Sending unicast response
+No pig was hit!
+Score is 9 in 9 runs

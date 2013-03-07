@@ -494,6 +494,11 @@ static void checkIfAffected ()
   int myLoc = gPigOwnNode.physLoc;
   int birdLoc = gPigOwnNode.birdLoc;
   // All the walls are assumed to have a height of 3 units
+  if (gPigOwnNode.isHit == true)
+  {
+    // All is lost. The bird has already landed
+    return;
+  }
   if (((birdLoc - myLoc) > 3) || ((birdLoc - myLoc) < -3))
   {
     // Not even a wall present close by with a pig adjacent can crush us.
@@ -850,12 +855,14 @@ void handleBirdLandMsg (int inMsgSize, char *inMsg)
   inMsg += IS_TARGET_SIZE;
   inMsgSize -= IS_TARGET_SIZE;
 
+  gPigOwnNode.isHit = false;
   if (isTarget == 1)
   {
     // Have to see if we have moved.
     if ((gPigOwnNode.physLoc == 0) || (gPigOwnNode.physLoc == destLoc))
     {
       // We have not moved.
+      cout<<gPigOwnNode.portNumber<<": I am hit!"<<endl;
       gPigOwnNode.isHit = true;
     }
   }
